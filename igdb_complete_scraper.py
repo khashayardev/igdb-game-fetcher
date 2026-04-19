@@ -75,6 +75,7 @@ class IGDBCompleteScraper:
                 self._get_access_token()
                 return self._make_request(endpoint, query)
             elif response.status_code == 429:
+                print(f"      ⚠️ محدودیت نرخ درخواست، ۲ ثانیه صبر...")
                 time.sleep(2)
                 return self._make_request(endpoint, query)
             else:
@@ -84,8 +85,11 @@ class IGDBCompleteScraper:
             print(f"      ❌ خطا: {e}")
             return []
 
-    def fetch_games_by_year(self, year: int, min_rating: float = 0, limit: int = 500) -> List[Dict]:
-        """دریافت لیست بازی‌های یک سال با فیلتر امتیاز"""
+    def fetch_all_games_by_year(self, year: int, min_rating: float = 0) -> List[Dict]:
+        """
+        دریافت تمام بازی‌های یک سال (بدون محدودیت 500 تایی)
+        با استفاده از pagination خودکار
+        """
         start_timestamp = int(datetime(year, 1, 1).timestamp())
         end_timestamp = int(datetime(year, 12, 31, 23, 59, 59).timestamp())
         
@@ -93,36 +97,41 @@ class IGDBCompleteScraper:
         
         all_games = []
         offset = 0
+        max_per_request = 500
         
         while True:
-            # ساخت کوئری با pagination
             rating_filter = f"& rating >= {min_rating}" if min_rating > 0 else ""
             query = f"""
                 fields id, name, rating, first_release_date;
                 where first_release_date >= {start_timestamp} & first_release_date <= {end_timestamp}{rating_filter};
                 sort rating desc;
-                limit 500;
+                limit {max_per_request};
                 offset {offset};
             """
             
             games = self._make_request("games", query)
             
-            if not games:
+            if not games or len(games) == 0:
                 break
             
             all_games.extend(games)
-            print(f"      📄 offset {offset} - {len(games)} بازی (مجموع: {len(all_games)})")
+            print(f"      📄 offset {offset} - {len(games)} بازی (مجموع تا الان: {len(all_games)})")
             
-            if len(games) < 500:
+            # اگر تعداد بازی‌های برگشتی کمتر از حداکثر مجاز باشد، به انتها رسیده‌ایم
+            if len(games) < max_per_request:
                 break
                 
-            offset += 500
+            offset += max_per_request
             time.sleep(0.2)  # تاخیر برای رعایت rate limit
         
-        # حذف تکراری‌ها و محدود کردن به خروجی
+        # حذف تکراری‌ها (بر اساس id)
         unique_games = {g['id']: g for g in all_games}.values()
-        result = sorted(list(unique_games), key=lambda x: x.get('rating', 0), reverse=True)[:limit]
-        print(f"      ✅ {len(result)} بازی با امتیاز >= {min_rating} برای سال {year}")
+        result = list(unique_games)
+        
+        # مرتب‌سازی بر اساس امتیاز (بالاترین اول)
+        result.sort(key=lambda x: x.get('rating', 0), reverse=True)
+        
+        print(f"      ✅ دریافت {len(result)} بازی برای سال {year}")
         return result
 
     def get_complete_game_details(self, game_id: int) -> Dict:
@@ -235,7 +244,7 @@ class IGDBCompleteScraper:
         return game
 
     def scrape_yearly_archive(self, start_year: int, end_year: int, min_rating: float = 0):
-        """اجرای اصلی اسکرپینگ"""
+        """اجرای اصلی اسکرپینگ - دریافت تمام بازی‌های هر سال بدون محدودیت"""
         print(f"\n🎮 شروع ساخت آرشیو کامل بازی‌ها از {start_year} تا {end_year}")
         print(f"⭐ فیلتر: بازی‌های با امتیاز >= {min_rating}")
         print("="*60)
@@ -256,12 +265,17 @@ class IGDBCompleteScraper:
         for year in range(start_year, end_year + 1):
             print(f"\n📅 سال {year}:")
             
-            # مرحله 1: دریافت لیست بازی‌های سال
-            games = self.fetch_games_by_year(year, min_rating=min_rating, limit=500)
+            # مرحله 1: دریافت تمام بازی‌های سال (بدون محدودیت 500 تایی)
+            games = self.fetch_all_games_by_year(year, min_rating=min_rating)
+            
+            if not games:
+                print(f"   ⚠️ هیچ بازی برای سال {year} یافت نشد")
+                continue
             
             # مرحله 2: دریافت جزئیات کامل برای هر بازی
             detailed_games = []
             total = len(games)
+            
             for i, game in enumerate(games, 1):
                 print(f"      🔄 [{i}/{total}] دریافت اطلاعات کامل: {game.get('name', 'Unknown')[:45]}...")
                 details = self.get_complete_game_details(game['id'])
@@ -272,7 +286,7 @@ class IGDBCompleteScraper:
             archive['games'].extend(detailed_games)
             self.stats['total_games'] += len(detailed_games)
             self.stats['years_processed'] += 1
-            print(f"   ✅ {len(detailed_games)} بازی کامل برای سال {year} ذخیره شد")
+            print(f"   ✅ {len(detailed_games)} بازی کامل برای سال {year} ذخیره شد (از {total} بازی یافت شده)")
         
         archive['metadata']['statistics'] = self.stats
         self.save_archive(archive)
@@ -299,6 +313,7 @@ def main():
     
     if not CLIENT_ID or not CLIENT_SECRET:
         print("❌ خطا: TWITCH_CLIENT_ID و TWITCH_CLIENT_SECRET پیدا نشد!")
+        print("لطفاً این متغیرهای محیطی را تنظیم کنید.")
         sys.exit(1)
     
     # دریافت سال‌ها از آرگومان‌ها
@@ -312,6 +327,9 @@ def main():
     min_rating = 0  # 0 یعنی بدون فیلتر امتیاز
     if len(sys.argv) >= 4:
         min_rating = float(sys.argv[3])
+    
+    print(f"📅 بازه زمانی: {start_year} تا {end_year}")
+    print(f"⭐ حداقل امتیاز: {min_rating}")
     
     scraper = IGDBCompleteScraper(CLIENT_ID, CLIENT_SECRET)
     scraper.scrape_yearly_archive(start_year, end_year, min_rating)
