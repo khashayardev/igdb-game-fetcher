@@ -1,4 +1,4 @@
-# 🎮 IGDB Game Fetcher
+# 🎮 IGDB Game Database Scraper
 
 > دریافت خودکار اطلاعات بازی‌های ویدیویی از سال ۲۰۰۰ تا ۲۰۲۶ با پایتون و GitHub Actions
 
