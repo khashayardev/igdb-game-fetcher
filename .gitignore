@@ -8,6 +8,7 @@
 !package.json
 !package-lock.json
 !tsconfig.json
+!composer.json
 
 # فایل‌های لاگ
 *.log
@@ -16,6 +17,7 @@
 # فایل‌های سیستمی
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # فایل‌های پایتون
 __pycache__/
@@ -24,13 +26,35 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
 
 # فایل‌های ویرایشگر
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.project
+.pydevproject
 
 # فایل‌های موقت
 *.tmp
 *.temp
+*.bak
+*.backup
+
+# فایل‌های فشرده
+*.zip
+*.tar.gz
+*.rar
+
+# دایرکتوری‌های خاص
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# فایل‌های مخصوص GitHub Actions
+*.artifact.tar.gz
